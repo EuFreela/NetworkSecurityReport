@@ -1,13 +1,12 @@
 import psutil
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import IsolationForest
 import requests
 import ipaddress
 import json
 import shodan
 
-SHODAN_API_KEY = 'YOUT_KEY_SHODAN'
+SHODAN_API_KEY = 'YOUR_KEY_SHODAN'
 ABUSEIPDB_API_KEY = 'YOUR_KEY_ABUSE'
 
 # Função para coletar dados de conexões de rede
@@ -112,6 +111,13 @@ results_df = analyze_connections(network_data)
 results_df.to_csv('network_data_analysis.csv', index=False)
 print("Análise de dados de rede salva em 'network_data_analysis.csv'.")
 
+# Usar Isolation Forest para detectar anomalias
+features = ['laddr_port', 'raddr_port']
+X = results_df[features].fillna(-1)  # Preencher valores nulos com -1 para o modelo
+
+model = IsolationForest(contamination=0.1)  # Ajustar o parâmetro de contaminação conforme necessário
+results_df['anomaly'] = model.fit_predict(X)
+
 # Criar os dados em formato JSON para o Chart.js
 vulnerable_counts = results_df['vulnerable'].value_counts().reset_index()
 vulnerable_counts.columns = ['vulnerable', 'count']
@@ -129,6 +135,15 @@ html_content = f"""
     <title>Network Security Report</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .vulnerable {{
+            background-color: red !important;
+            color: white;
+        }}
+        .anomaly {{
+            background-color: yellow !important;
+        }}
+    </style>
 </head>
 <body>
     <div class="container">
@@ -160,10 +175,11 @@ html_content = f"""
                             <th>Vulnerável</th>
                             <th>Vulnerabilidades</th>
                             <th>Reputação IP</th>
+                            <th>Anomalia</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {"".join([f"<tr><td>{row['laddr_ip']}</td><td>{row['laddr_port']}</td><td>{row['raddr_ip']}</td><td>{row['raddr_port']}</td><td>{'Sim' if row['vulnerable'] == 1 else 'Não'}</td><td>{', '.join(row['vulnerabilities']) if row['vulnerabilities'] else 'Nenhuma'}</td><td>{row['ip_reputation']}</td></tr>" for index, row in results_df.iterrows()])}
+                        {"".join([f"<tr class='{'vulnerable' if row['vulnerable'] == 1 else ''} {'anomaly' if row['anomaly'] == -1 else ''}'><td>{row['laddr_ip']}</td><td>{row['laddr_port']}</td><td>{row['raddr_ip']}</td><td>{row['raddr_port']}</td><td>{'Sim' if row['vulnerable'] == 1 else 'Não'}</td><td>{', '.join(row['vulnerabilities']) if row['vulnerabilities'] else 'Nenhuma'}</td><td>{row['ip_reputation']}</td><td>{'Sim' if row['anomaly'] == -1 else 'Não'}</td></tr>" for index, row in results_df.iterrows()])}
                     </tbody>
                 </table>
             </div>
